@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PARQ Dashboard Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gd:#1A4012;--gm:#2C5F1E;--gl:#52B043;--gp:#E8F5E9;
+  --grey:#F4F6F4;--bd:#D8E4D5;--tx:#1C2A1A;--mu:#6B7E68;--wh:#fff;
+  --bl:#1565C0;--bp:#E3F2FD;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'DM Sans',sans-serif;background:var(--grey);color:var(--tx);
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  padding:36px 20px 60px;
+}
+
+/* ── Header ── */
+.hdr{text-align:center;margin-bottom:28px}
+.badge{display:inline-block;background:var(--gd);color:#fff;font-size:11px;font-weight:600;
+  letter-spacing:2px;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin-bottom:14px}
+h1{font-family:'DM Serif Display',serif;font-size:2.4rem;color:var(--gd);line-height:1.15;margin-bottom:8px}
+.sub{color:var(--mu);font-size:14px;max-width:460px;margin:0 auto;line-height:1.6}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:10px;justify-content:center;margin-bottom:24px}
+.tab{padding:10px 22px;border:2px solid var(--bd);border-radius:30px;font-family:'DM Sans',sans-serif;
+  font-size:13px;font-weight:600;cursor:pointer;background:var(--wh);color:var(--mu);transition:all .2s}
+.tab.g{border-color:var(--gm);background:var(--gm);color:#fff}
+.tab.b{border-color:var(--bl);background:var(--bl);color:#fff}
+
+/* ── Panels ── */
+.dpanel{display:none}.dpanel.show{display:block}
+
+/* ── Card ── */
+.card{background:var(--wh);border:1px solid var(--bd);border-radius:16px;
+  box-shadow:0 2px 16px rgba(44,95,30,.10);padding:28px 32px;width:100%;max-width:580px}
+.card.bc{border-color:#90CAF9;box-shadow:0 2px 16px rgba(21,101,192,.10)}
+
+/* ── Section label ── */
+.sl{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--gm);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sl.b{color:var(--bl)}
+.sl::after{content:'';flex:1;height:1px;background:var(--bd)}
+
+/* ── Drop zone ── */
+.fg{margin-bottom:16px}
+.fl{font-size:12px;font-weight:600;color:var(--mu);margin-bottom:6px;display:block}
+.dz{border:2px dashed var(--bd);border-radius:10px;padding:24px 16px;text-align:center;
+  cursor:pointer;transition:all .2s;background:var(--grey);position:relative}
+.dz input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.gc .dz:hover,.gc .dz.ov{border-color:var(--gl);background:var(--gp)}
+.bc .dz:hover,.bc .dz.ov{border-color:var(--bl);background:var(--bp)}
+.dz-i{font-size:1.8rem;margin-bottom:6px}
+.dz-t{font-size:13px;color:var(--mu)}
+.gc .dz-t strong{color:var(--gm)}.bc .dz-t strong{color:var(--bl)}
+.dz-fn{margin-top:8px;font-size:12px;font-weight:600;display:none}
+.gc .dz-fn{color:var(--gd)}.bc .dz-fn{color:var(--bl)}
+
+/* ── Info box ── */
+.or{display:flex;align-items:center;gap:8px;border-radius:8px;padding:9px 14px;margin-bottom:20px;font-size:12px}
+.gc .or{background:var(--gp);border:1px solid #A5D6A7;color:var(--gd)}
+.bc .or{background:var(--bp);border:1px solid #90CAF9;color:var(--bl)}
+
+/* ── Button ── */
+.btn{width:100%;padding:13px;color:#fff;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;
+  font-size:15px;font-weight:700;cursor:pointer;transition:background .2s,box-shadow .2s;
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.gc .btn{background:var(--gm);box-shadow:0 3px 12px rgba(44,95,30,.30)}
+.gc .btn:hover{background:var(--gd)}
+.bc .btn{background:var(--bl);box-shadow:0 3px 12px rgba(21,101,192,.30)}
+.bc .btn:hover{background:#0D47A1}
+.btn:disabled{background:#aaa!important;cursor:not-allowed;box-shadow:none!important}
+
+/* ── Spinner ── */
+.spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;
+  border-radius:50%;animation:sp .7s linear infinite;display:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ── Status box ── */
+.sb{margin-top:16px;padding:14px 16px;border-radius:10px;font-size:13px;line-height:1.6;display:none;animation:fi .3s ease}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.sb.ok.gn{background:var(--gp);border:1px solid #A5D6A7;color:var(--gd)}
+.sb.ok.bn{background:var(--bp);border:1px solid #90CAF9;color:#0D47A1}
+.sb.er{background:#FFF3F3;border:1px solid #FFCDD2;color:#B71C1C}
+.sb .si{font-size:1.3rem;display:block;margin-bottom:5px}
+
+/* ── Log box ── */
+.lb{margin-top:10px;background:#1A2A18;color:#7ECC6A;font-family:'Courier New',monospace;
+  font-size:11px;line-height:1.7;padding:10px 14px;border-radius:8px;
+  max-height:130px;overflow-y:auto;display:none}
+
+/* ── Footer ── */
+.footer{margin-top:28px;font-size:11.5px;color:var(--mu);text-align:center}
+.footer strong{color:var(--gm)}
+</style>
+  <script type="module" crossorigin src="/parq-dashboard/assets/index-CScy1I5J.js"></script>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="badge">JLL &middot; The PARQ &middot; JOB152</div>
+  <h1>PARQ Dashboard<br>Generator</h1>
+  <p class="sub">Upload your CSV to generate the weekly HTML report — no server required.</p>
+</div>
+
+<div class="tabs">
+  <button class="tab g" id="tCWO"  onclick="sw('cwo')">&#128295; Corrective Work Orders</button>
+  <button class="tab"   id="tCase" onclick="sw('case')">&#128203; Case Management</button>
+</div>
+
+<!-- ── CWO Panel ── -->
+<div class="dpanel show" id="pCWO">
+  <div class="card gc">
+    <div class="sl">Upload CSV</div>
+    <div class="fg">
+      <label class="fl">MZ_PARQ_CWO_Enriched.csv</label>
+      <div class="dz" id="cwoDz">
+        <input type="file" id="cwoFi" accept=".csv" onchange="of('cwo',this)">
+        <div class="dz-i">&#128202;</div>
+        <div class="dz-t">Drop CSV here or <strong>click to browse</strong></div>
+        <div class="dz-fn" id="cwoFn"></div>
+      </div>
+    </div>
+    <div class="or">
+      <span>&#8681;</span>
+      <span>Report will be downloaded automatically to your <strong>Downloads</strong> folder.</span>
+    </div>
+    <button class="btn" id="cwoBG" onclick="gen('cwo')">
+      <div class="spin" id="cwoSp"></div>
+      <span id="cwoBT">&#9889; Generate CWO Dashboard</span>
+    </button>
+    <div class="sb" id="cwoSb"></div>
+    <div class="lb" id="cwoLb"></div>
+  </div>
+</div>
+
+<!-- ── Case Panel ── -->
+<div class="dpanel" id="pCase">
+  <div class="card bc">
+    <div class="sl b">Upload CSV</div>
+    <div class="fg">
+      <label class="fl">MZ_PARQ_Cases_Enriched.csv</label>
+      <div class="dz" id="caseDz">
+        <input type="file" id="caseFi" accept=".csv" onchange="of('case',this)">
+        <div class="dz-i">&#128203;</div>
+        <div class="dz-t">Drop CSV here or <strong>click to browse</strong></div>
+        <div class="dz-fn" id="caseFn"></div>
+      </div>
+    </div>
+    <div class="or" style="background:var(--bp);border-color:#90CAF9;color:var(--bl)">
+      <span>&#8681;</span>
+      <span>Report will be downloaded automatically to your <strong>Downloads</strong> folder.</span>
+    </div>
+    <button class="btn" id="caseBG" onclick="gen('case')">
+      <div class="spin" id="caseSp"></div>
+      <span id="caseBT">&#128203; Generate Case Management Dashboard</span>
+    </button>
+    <div class="sb" id="caseSb"></div>
+    <div class="lb" id="caseLb"></div>
+  </div>
+</div>
+
+<div class="footer">
+  Running locally with Vite &middot; Smart City OB &middot; The PARQ &middot; <strong>JOB152</strong>
+</div>
+
+</body>
+</html>
