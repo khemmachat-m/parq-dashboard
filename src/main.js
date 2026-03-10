@@ -1,10 +1,10 @@
 /**
- * PARQ Dashboard Generator – main.js v7
+ * PARQ Dashboard Generator – main.js v8
  *
- * Two outputs per session:
- *   1. ⚡ Generate Dashboard  → weekly HTML report  (selected week only)
- *   2. 📥 Download Enriched CSV → full enriched CSV (all rows, all dates)
- *                                  for use in other processes / commit to GitHub
+ * Outputs per session:
+ *   1. ⚡ Generate Dashboard      → weekly HTML report (selected week, opens in new tab)
+ *   2. 📥 Download Enriched CSV  → full enriched CSV (all rows, all dates) — local download
+ *   3. ☁️ Save to GitHub          → commits enriched CSV to public/enriched/ in the repo
  */
 import './style.css';
 import Papa from 'papaparse';
@@ -32,6 +32,16 @@ import { ppmStats }  from './processors/ppm.js';
 import { generateCWOHtml }  from './generators/cwoHtml.js';
 import { generateCaseHtml } from './generators/caseHtml.js';
 import { generatePPMHtml }  from './generators/ppmHtml.js';
+
+// ── GitHub config ─────────────────────────────────────────────────────────────
+const GH_OWNER  = 'Khemmachat-m';
+const GH_REPO   = 'parq-dashboard';
+const GH_BRANCH = 'main';
+const GH_FOLDER = 'public/enriched';
+const PAT_KEY   = 'parq_gh_pat';
+
+function getStoredPat() { return localStorage.getItem(PAT_KEY) || ''; }
+function savePat(pat)   { if (pat) localStorage.setItem(PAT_KEY, pat); else localStorage.removeItem(PAT_KEY); }
 
 // ── Master slots ──────────────────────────────────────────────────────────────
 const MASTER_SLOTS = [
@@ -104,21 +114,25 @@ const TABS = [
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let state = {
-  activeTab:       'cwo',
-  txFile:          null,
-  txRows:          null,        // raw parsed rows (all dates)
-  enrichedRows:    null,        // enriched rows (all dates, cached after first enrich)
-  availableWeeks:  [],
-  selectedWeekIdx: 0,
-  masters:         {},
-  masterPanelOpen: false,
-  loading:         true,
-  status:          'idle',      // idle | enriching | processing | success | error
-  lastAction:      null,        // 'dashboard' | 'csv'
-  error:           '',
-  lwCount:         0,
-  pwCount:         0,
+  activeTab:        'cwo',
+  txFile:           null,
+  txRows:           null,
+  enrichedRows:     null,
+  availableWeeks:   [],
+  selectedWeekIdx:  0,
+  masters:          {},
+  masterPanelOpen:  false,
+  ghPanelOpen:      false,
+  ghPat:            getStoredPat(),
+  ghPatInput:       getStoredPat(),
+  loading:          true,
+  status:           'idle',      // idle | enriching | processing | uploading | success | error
+  lastAction:       null,        // 'dashboard' | 'csv' | 'github'
+  error:            '',
+  lwCount:          0,
+  pwCount:          0,
   enrichedRowCount: 0,
+  ghCommitUrl:      '',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,7 +156,6 @@ function readFileText(file) {
 }
 function getBaseUrl() { return import.meta.env.BASE_URL || '/'; }
 
-// Build master lookup maps from stored CSV text
 async function buildMastersFromState() {
   const raws = {};
   for (const slot of MASTER_SLOTS) {
@@ -190,16 +203,69 @@ function weekSummaryHtml(week) {
     </div>`;
 }
 
+// ── GitHub settings panel HTML ────────────────────────────────────────────────
+function ghPanelHtml() {
+  const hasPat = !!state.ghPat;
+  const isOpen = state.ghPanelOpen;
+  return `
+    <div class="master-panel-header" id="ghPanelToggle">
+      <div class="master-panel-left">
+        <div class="master-panel-icon">☁️</div>
+        <div>
+          <div class="master-panel-title">GitHub Upload Settings</div>
+          <div class="master-panel-sub">
+            ${hasPat
+              ? `<span class="status-dot dot-green"></span> PAT saved — Save to GitHub is enabled`
+              : `<span class="status-dot dot-yellow"></span> No PAT — enter one to enable GitHub upload`}
+          </div>
+        </div>
+      </div>
+      <div class="master-panel-right">
+        ${hasPat
+          ? `<span class="stored-badge">✓ Ready</span>`
+          : `<span class="stored-badge badge-missing">Setup needed</span>`}
+        <div class="chevron ${isOpen ? 'chevron-open' : ''}">▾</div>
+      </div>
+    </div>
+
+    <div class="master-panel-body ${isOpen ? 'panel-open' : 'panel-closed'}">
+      <div class="master-panel-note">
+        Enter a GitHub <strong>Personal Access Token (PAT)</strong> with <strong>repo</strong> scope.<br>
+        Saved only in <strong>your browser</strong> (localStorage) — never sent anywhere except GitHub.<br>
+        Target repo: <code>${GH_OWNER}/${GH_REPO}</code> → folder: <code>${GH_FOLDER}/</code>
+      </div>
+      <div class="gh-pat-row">
+        <input
+          type="password"
+          id="ghPatInput"
+          class="gh-pat-input"
+          placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+          value="${state.ghPatInput}"
+          autocomplete="off"
+        />
+        <button class="btn-gh-save" id="ghPatSaveBtn">💾 Save PAT</button>
+        ${hasPat ? `<button class="btn-gh-clear" id="ghPatClearBtn">✕ Clear</button>` : ''}
+      </div>
+      <div class="gh-pat-hint">
+        Create at: <strong>GitHub → Settings → Developer settings → Personal access tokens</strong><br>
+        Required scope: <strong>repo</strong> (read &amp; write files to the repository)
+      </div>
+    </div>
+  `;
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   const tab      = TABS.find(t => t.id === state.activeTab);
   const required = TAB_REQUIRED[state.activeTab];
   const missingRequired = required.filter(key => !state.masters[key]);
   const week     = selectedWeek();
-  const busy     = state.status === 'processing' || state.status === 'enriching' || state.loading;
+  const busy     = state.status === 'processing' || state.status === 'enriching'
+                || state.status === 'uploading'  || state.loading;
 
   const canGenerate    = state.txFile && state.txRows && week && missingRequired.length === 0 && !busy;
   const canEnrichedCsv = state.txFile && state.txRows && missingRequired.length === 0 && !busy;
+  const canGitHub      = canEnrichedCsv && !!state.ghPat;
 
   const bundledCount  = Object.values(state.masters).filter(m => m.source === 'bundled').length;
   const overrideCount = Object.values(state.masters).filter(m => m.source === 'override').length;
@@ -284,6 +350,11 @@ function render() {
 
       <div class="card-divider"></div>
 
+      <!-- ══ GITHUB SETTINGS PANEL ══════════════════════════════════════════ -->
+      ${ghPanelHtml()}
+
+      <div class="card-divider"></div>
+
       <!-- ══ STEP 1: Transaction file ═══════════════════════════════════════ -->
       <div class="step-header">
         <div class="step-num">1</div>
@@ -333,8 +404,9 @@ function render() {
           ? `<div class="msg msg-warn">⚠️ Master data required for ${tab.shortLabel}:
                <strong>${missingRequired.map(k => MASTER_SLOTS.find(s => s.key===k)?.label).join(', ')}</strong> not loaded.</div>`
           : `<div class="info-bar">
-               ⬇️ &nbsp;<strong>Generate Dashboard</strong> downloads the HTML report and opens it in a new browser tab.<br>
-               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Download Enriched CSV</strong> exports all rows with master data joined — for other processes.
+               ⬇️ &nbsp;<strong>Generate Dashboard</strong> downloads the HTML report and opens it in a new tab.<br>
+               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Download Enriched CSV</strong> saves the enriched file locally.<br>
+               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Save to GitHub</strong> commits the enriched CSV to the repo for shared access.
              </div>`}
       </div>
 
@@ -359,7 +431,19 @@ function render() {
           <div class="msg-title">✅ Enriched CSV downloaded!</div>
           <div class="msg-detail">
             <strong>${state.enrichedRowCount.toLocaleString()}</strong> rows exported with all master data joined<br>
-            File: <strong>${tab.outEnriched}</strong> · Ready to commit to GitHub or use in other processes
+            File: <strong>${tab.outEnriched}</strong>
+          </div>
+        </div>` : ''}
+
+      ${state.status === 'success' && state.lastAction === 'github' ? `
+        <div class="msg msg-success">
+          <div class="msg-title">✅ Saved to GitHub!</div>
+          <div class="msg-detail">
+            <strong>${state.enrichedRowCount.toLocaleString()}</strong> rows committed to the repository<br>
+            Path: <strong>${GH_FOLDER}/${tab.outEnriched}</strong><br>
+            ${state.ghCommitUrl
+              ? `<a href="${state.ghCommitUrl}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">View commit on GitHub →</a>`
+              : ''}
           </div>
         </div>` : ''}
 
@@ -380,6 +464,14 @@ function render() {
           ${state.status === 'enriching'
             ? `<span class="spinner spinner-dark"></span> Enriching…`
             : `📥 Download Enriched CSV`}
+        </button>
+
+        <!-- Tertiary: Save enriched CSV to GitHub -->
+        <button class="btn-github" id="githubBtn" ${canGitHub ? '' : 'disabled'}
+          title="${!state.ghPat ? 'Enter a GitHub PAT in the settings panel above to enable this' : 'Commit enriched CSV to GitHub repository'}">
+          ${state.status === 'uploading'
+            ? `<span class="spinner spinner-dark"></span> Uploading…`
+            : `☁️ Save to GitHub`}
         </button>
 
       </div>
@@ -409,6 +501,37 @@ function attachEvents() {
     state.masterPanelOpen = !state.masterPanelOpen;
     render();
   });
+
+  // GitHub panel toggle
+  document.getElementById('ghPanelToggle').addEventListener('click', () => {
+    state.ghPanelOpen = !state.ghPanelOpen;
+    render();
+  });
+
+  // PAT input — track live value
+  const patInput = document.getElementById('ghPatInput');
+  if (patInput) patInput.addEventListener('input', e => { state.ghPatInput = e.target.value; });
+
+  // Save PAT
+  const patSaveBtn = document.getElementById('ghPatSaveBtn');
+  if (patSaveBtn) {
+    patSaveBtn.addEventListener('click', () => {
+      const pat = state.ghPatInput.trim();
+      savePat(pat);
+      state = { ...state, ghPat: pat, ghPanelOpen: false, status: 'idle' };
+      render();
+    });
+  }
+
+  // Clear PAT
+  const patClearBtn = document.getElementById('ghPatClearBtn');
+  if (patClearBtn) {
+    patClearBtn.addEventListener('click', () => {
+      savePat('');
+      state = { ...state, ghPat: '', ghPatInput: '', status: 'idle' };
+      render();
+    });
+  }
 
   // Master file overrides
   document.querySelectorAll('.master-input').forEach(input =>
@@ -451,13 +574,15 @@ function attachEvents() {
     });
   }
 
-  // Generate dashboard button
+  // Action buttons
   const generateBtn = document.getElementById('generateBtn');
   if (generateBtn && !generateBtn.disabled) generateBtn.addEventListener('click', generateDashboard);
 
-  // Download enriched CSV button
   const enrichedBtn = document.getElementById('enrichedCsvBtn');
   if (enrichedBtn && !enrichedBtn.disabled) enrichedBtn.addEventListener('click', downloadEnrichedCsv);
+
+  const githubBtn = document.getElementById('githubBtn');
+  if (githubBtn && !githubBtn.disabled) githubBtn.addEventListener('click', saveToGitHub);
 }
 
 // ── File handlers ─────────────────────────────────────────────────────────────
@@ -469,7 +594,6 @@ async function handleTxFile(file) {
   state = { ...state, txFile: file, txRows: null, enrichedRows: null,
     availableWeeks: [], selectedWeekIdx: 0, status: 'idle', error: '' };
   render();
-
   try {
     const text  = await readFileText(file);
     const rows  = await parseCSVText(text, file.name);
@@ -490,7 +614,6 @@ async function handleMasterFile(slotKey, file) {
   try {
     const csvText = await readFileText(file);
     const record  = await saveOverride(slotKey, file.name, csvText);
-    // Invalidate cached enriched rows since master data changed
     state = { ...state,
       masters:      { ...state.masters, [slotKey]: { ...record, source: 'override' } },
       enrichedRows: null,
@@ -502,11 +625,11 @@ async function handleMasterFile(slotKey, file) {
   render();
 }
 
-// ── Shared enrichment (builds + caches enrichedRows) ─────────────────────────
+// ── Shared enrichment ─────────────────────────────────────────────────────────
 async function ensureEnriched() {
   const tab = TABS.find(t => t.id === state.activeTab);
-  if (state.enrichedRows) return state.enrichedRows; // use cache
-  const masters = await buildMastersFromState();
+  if (state.enrichedRows) return state.enrichedRows;
+  const masters  = await buildMastersFromState();
   const enriched = tab.enrich(state.txRows, masters);
   state.enrichedRows = enriched;
   return enriched;
@@ -525,14 +648,10 @@ async function generateDashboard() {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
 
-    // 1. Trigger file download
     const a = Object.assign(document.createElement('a'), { href: url, download: tab.out });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
-    // 2. Open the report in a new browser tab
     window.open(url, '_blank');
-
-    // 3. Revoke the object URL after a short delay to allow both actions to complete
     setTimeout(() => URL.revokeObjectURL(url), 10000);
 
     state = { ...state, status: 'success', lwCount, pwCount };
@@ -554,6 +673,69 @@ async function downloadEnrichedCsv() {
     state = { ...state, status: 'success', enrichedRowCount: enriched.length };
   } catch (err) {
     state = { ...state, status: 'error', error: err.message };
+  }
+  render();
+}
+
+// ── Save Enriched CSV to GitHub ───────────────────────────────────────────────
+async function saveToGitHub() {
+  const tab = TABS.find(t => t.id === state.activeTab);
+  const pat = state.ghPat;
+  if (!pat) {
+    state = { ...state, status: 'error', error: 'No GitHub PAT saved. Open GitHub Upload Settings and save your token.' };
+    render(); return;
+  }
+
+  state = { ...state, status: 'uploading', lastAction: 'github' };
+  render();
+
+  try {
+    const enriched = await ensureEnriched();
+    const csvText  = rowsToCsv(enriched);
+
+    const filePath = `${GH_FOLDER}/${tab.outEnriched}`;
+    const apiUrl   = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${filePath}`;
+    const headers  = {
+      'Authorization':        `Bearer ${pat}`,
+      'Accept':               'application/vnd.github+json',
+      'Content-Type':         'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+
+    // 1. Check if file exists to get its SHA (required for update)
+    let existingSha = null;
+    const getRes = await fetch(apiUrl, { headers });
+    if (getRes.ok) {
+      existingSha = (await getRes.json()).sha;
+    } else if (getRes.status !== 404) {
+      const err = await getRes.json();
+      throw new Error(`GitHub API ${getRes.status}: ${err.message}`);
+    }
+
+    // 2. Base64-encode the CSV
+    const b64Content = btoa(unescape(encodeURIComponent(csvText)));
+
+    // 3. Commit (create or update)
+    const today = new Date().toISOString().slice(0, 10);
+    const body  = {
+      message: `Update ${tab.outEnriched} (${today})`,
+      content: b64Content,
+      branch:  GH_BRANCH,
+      ...(existingSha ? { sha: existingSha } : {}),
+    };
+
+    const putRes = await fetch(apiUrl, { method: 'PUT', headers, body: JSON.stringify(body) });
+    if (!putRes.ok) {
+      const err = await putRes.json();
+      throw new Error(`GitHub API ${putRes.status}: ${err.message}`);
+    }
+
+    const result    = await putRes.json();
+    const commitUrl = result?.commit?.html_url || '';
+
+    state = { ...state, status: 'success', enrichedRowCount: enriched.length, ghCommitUrl: commitUrl };
+  } catch (err) {
+    state = { ...state, status: 'error', error: `GitHub upload failed: ${err.message}` };
   }
   render();
 }

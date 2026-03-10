@@ -467,3 +467,86 @@ body {
 [data-theme="cwo"]  .wsum-dates { color: var(--cwo-dark); }
 [data-theme="case"] .wsum-dates { color: var(--case-dark); }
 [data-theme="ppm"]  .wsum-dates { color: var(--ppm-dark); }
+
+/* ── GitHub PAT panel ──────────────────────────────────────────────────────── */
+.gh-pat-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 6px;
+  flex-wrap: wrap;
+}
+.gh-pat-input {
+  flex: 1;
+  min-width: 220px;
+  padding: 8px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.gh-pat-input:focus { border-color: #2563eb; }
+.btn-gh-save {
+  padding: 8px 14px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-gh-save:hover { background: #1d4ed8; }
+.btn-gh-clear {
+  padding: 8px 12px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-gh-clear:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.gh-pat-hint {
+  font-size: 11.5px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.gh-pat-hint code {
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* ── Save to GitHub button ─────────────────────────────────────────────────── */
+.btn-github {
+  padding: 13px 20px;
+  background: #fff;
+  color: #24292f;
+  border: 2px solid #24292f;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-github:hover:not(:disabled) {
+  background: #24292f;
+  color: #fff;
+}
+.btn-github:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
