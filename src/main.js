@@ -333,7 +333,7 @@ function render() {
           ? `<div class="msg msg-warn">⚠️ Master data required for ${tab.shortLabel}:
                <strong>${missingRequired.map(k => MASTER_SLOTS.find(s => s.key===k)?.label).join(', ')}</strong> not loaded.</div>`
           : `<div class="info-bar">
-               ⬇️ &nbsp;<strong>Generate Dashboard</strong> downloads the HTML report for the selected week.<br>
+               ⬇️ &nbsp;<strong>Generate Dashboard</strong> downloads the HTML report and opens it in a new browser tab.<br>
                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Download Enriched CSV</strong> exports all rows with master data joined — for other processes.
              </div>`}
       </div>
@@ -346,11 +346,11 @@ function render() {
 
       ${state.status === 'success' && state.lastAction === 'dashboard' ? `
         <div class="msg msg-success">
-          <div class="msg-title">✅ Dashboard downloaded!</div>
+          <div class="msg-title">✅ Dashboard downloaded &amp; opened!</div>
           <div class="msg-detail">
             Last Week: <strong>${state.lwCount}</strong> records ·
             Previous Week: <strong>${state.pwCount}</strong> records<br>
-            File: <strong>${tab.out}</strong>
+            File: <strong>${tab.out}</strong> — also opened in a new browser tab
           </div>
         </div>` : ''}
 
@@ -522,10 +522,18 @@ async function generateDashboard() {
     const enriched = await ensureEnriched();
     const { html, lwCount, pwCount } = tab.process(enriched, week.lwEnd);
 
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
-    const a   = Object.assign(document.createElement('a'), { href: url, download: tab.out });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+
+    // 1. Trigger file download
+    const a = Object.assign(document.createElement('a'), { href: url, download: tab.out });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    // 2. Open the report in a new browser tab
+    window.open(url, '_blank');
+
+    // 3. Revoke the object URL after a short delay to allow both actions to complete
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
 
     state = { ...state, status: 'success', lwCount, pwCount };
   } catch (err) {

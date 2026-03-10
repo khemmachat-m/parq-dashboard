@@ -1,26 +1,32 @@
 /**
  * Case Management – data processing
+ *
+ * Mozart StatusCode values (from export):
+ *   '1'   = New / Active (no ResolvedOn)
+ *   '2'   = Acknowledged
+ *   '4'   = Resolved (ResolvedOn is populated)
+ *   '101' = Cancelled
+ *
+ * SLA fields (from export):
+ *   SLAFailed = 'True' → SLA breached
+ *   SLAFailed = ''     → check SLADate + ResolvedOn to confirm pass
  */
 import { parseDate } from '../utils/date.js';
 import { pctOf, topN } from '../utils/stats.js';
 
-/**
- * Compute Case statistics for a set of rows.
- * Expects enriched CSV columns (EventType_Description, Priority_Name, Location_Name…)
- * Falls back gracefully to raw IDs when enriched columns are absent.
- */
 export function caseStats(rows) {
   const total     = rows.length;
-  const resolved  = rows.filter(r => +r.StatusId === 7).length;
-  const cancelled = rows.filter(r => +r.StatusId === 8).length;
-  const active    = rows.filter(r => [4, 5].includes(+r.StatusId)).length;
+  const resolved  = rows.filter(r => r.StatusCode === '4').length;
+  const cancelled = rows.filter(r => r.StatusCode === '101').length;
+  const active    = rows.filter(r => ['1', '2'].includes(r.StatusCode)).length;
 
   let slaPass = 0, slaFail = 0;
   for (const r of rows) {
-    const actual = parseDate(r.ActualCompletionDateTime);
-    const sla    = parseDate(r.SlatoResolve);
-    if (actual && sla) {
-      if (actual <= sla) slaPass++; else slaFail++;
+    if (r.SLAFailed === 'True') {
+      slaFail++;
+    } else if (r.ResolvedOn?.trim() && r.SLADate?.trim()) {
+      // Resolved before SLA date = pass
+      slaPass++;
     }
   }
   const slaTotal = slaPass + slaFail;
