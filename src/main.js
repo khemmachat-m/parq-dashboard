@@ -339,7 +339,12 @@ function render() {
                      ${isOverride ? `🔄 Override · ${fmtStoredDate(m.updatedAt)}` : '📦 From repository'}
                    </div>
                    ${isOverride
-                     ? `<button class="slot-clear" data-slot="${slot.key}">✕ Remove override</button>`
+                     ? `<div class="slot-actions">
+                          <button class="slot-clear" data-slot="${slot.key}">✕ Remove override</button>
+                          ${state.ghPat
+                            ? `<button class="slot-push" data-slot="${slot.key}" title="Commit this file to public/masterdata/ in the repo so all users get it automatically">☁️ Save to repo</button>`
+                            : `<div class="slot-push-hint">Save PAT above to enable repo push</div>`}
+                        </div>`
                      : `<div class="slot-upload-hint">Click/drop to override</div>`}`
                 : `<div class="slot-hint">${slot.hint}</div>
                    <div class="slot-drop-cue">Not in repo — upload manually</div>`}
@@ -435,7 +440,17 @@ function render() {
           </div>
         </div>` : ''}
 
-      ${state.status === 'success' && state.lastAction === 'github' ? `
+      ${state.status === 'success' && state.lastAction === 'masterPush' ? `
+        <div class="msg msg-success">
+          <div class="msg-title">✅ Master data saved to repository!</div>
+          <div class="msg-detail">
+            <strong>${state.masterPushLabel}</strong> committed to <strong>public/masterdata/</strong><br>
+            All users will get this file automatically after the next deployment.<br>
+            ${state.ghCommitUrl
+              ? `<a href="${state.ghCommitUrl}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">View commit on GitHub →</a>`
+              : ''}
+          </div>
+        </div>` : ''}
         <div class="msg msg-success">
           <div class="msg-title">✅ Saved to GitHub!</div>
           <div class="msg-detail">
@@ -552,6 +567,13 @@ function attachEvents() {
       const { merged } = await loadAllMasters(getBaseUrl());
       state = { ...state, masters: merged, enrichedRows: null };
       render();
+    })
+  );
+
+  document.querySelectorAll('.slot-push').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      saveMasterToGitHub(btn.dataset.slot);
     })
   );
 
@@ -678,6 +700,86 @@ async function downloadEnrichedCsv() {
 }
 
 // ── Save Enriched CSV to GitHub ───────────────────────────────────────────────
+// ── Save Master CSV to GitHub ─────────────────────────────────────────────────
+async function saveMasterToGitHub(slotKey) {
+  const pat = state.ghPat;
+  if (!pat) {
+    state = { ...state, status: 'error', error: 'No GitHub PAT saved. Open GitHub Upload Settings and save your token.' };
+    render(); return;
+  }
+
+  const m = state.masters[slotKey];
+  if (!m?.csvText) {
+    state = { ...state, status: 'error', error: `No override loaded for slot: ${slotKey}` };
+    render(); return;
+  }
+
+  // Target filename = the canonical bundled name (e.g. "assets.csv")
+  const targetFilename = BUNDLED_FILES[slotKey];
+  if (!targetFilename) {
+    state = { ...state, status: 'error', error: `Unknown slot key: ${slotKey}` };
+    render(); return;
+  }
+
+  const slot = MASTER_SLOTS.find(s => s.key === slotKey);
+  state = { ...state, status: 'uploading', lastAction: 'masterPush',
+            masterPushSlot: slotKey, masterPushLabel: slot?.label || slotKey };
+  render();
+
+  try {
+    const filePath = `public/masterdata/${targetFilename}`;
+    const apiUrl   = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${filePath}`;
+    const headers  = {
+      'Authorization':        `Bearer ${pat}`,
+      'Accept':               'application/vnd.github+json',
+      'Content-Type':         'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+
+    // 1. Get existing SHA (required to update an existing file)
+    let existingSha = null;
+    const getRes = await fetch(apiUrl, { headers });
+    if (getRes.ok) {
+      existingSha = (await getRes.json()).sha;
+    } else if (getRes.status !== 404) {
+      const err = await getRes.json();
+      throw new Error(`GitHub API ${getRes.status}: ${err.message}`);
+    }
+
+    // 2. Base64-encode the CSV text
+    const b64Content = btoa(unescape(encodeURIComponent(m.csvText)));
+
+    // 3. Commit
+    const today = new Date().toISOString().slice(0, 10);
+    const body  = {
+      message: `Update masterdata/${targetFilename} (${today})`,
+      content: b64Content,
+      branch:  GH_BRANCH,
+      ...(existingSha ? { sha: existingSha } : {}),
+    };
+
+    const putRes = await fetch(apiUrl, { method: 'PUT', headers, body: JSON.stringify(body) });
+    if (!putRes.ok) {
+      const err = await putRes.json();
+      throw new Error(`GitHub API ${putRes.status}: ${err.message}`);
+    }
+
+    const result    = await putRes.json();
+    const commitUrl = result?.commit?.html_url || '';
+
+    // After successful push: remove IndexedDB override (repo is now the source of truth)
+    await deleteOverride(slotKey).catch(() => {});
+    const { merged } = await loadAllMasters(getBaseUrl());
+
+    state = { ...state, status: 'success', lastAction: 'masterPush',
+              masters: merged, masterPushSlot: slotKey,
+              masterPushLabel: slot?.label || slotKey, ghCommitUrl: commitUrl };
+  } catch (err) {
+    state = { ...state, status: 'error', error: `Master upload failed: ${err.message}` };
+  }
+  render();
+}
+
 async function saveToGitHub() {
   const tab = TABS.find(t => t.id === state.activeTab);
   const pat = state.ghPat;

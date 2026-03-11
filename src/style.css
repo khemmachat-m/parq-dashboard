@@ -150,6 +150,15 @@ body {
 }
 .slot-clear:hover { background: #FFEBEE; border-color: #FFCDD2; color: #C62828; }
 
+.slot-actions   { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; position: relative; z-index: 2; }
+.slot-push {
+  font-size: 10px; color: #1565C0; background: #E3F2FD;
+  border: 1px solid #90CAF9; border-radius: 4px; padding: 2px 7px;
+  cursor: pointer; width: fit-content; transition: var(--transition);
+}
+.slot-push:hover { background: #1565C0; color: #fff; border-color: #1565C0; }
+.slot-push-hint { font-size: 10px; color: #bbb; margin-top: 4px; font-style: italic; }
+
 /* ── Step header ────────────────────────────────────────────────────────────── */
 .step-header  { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
 .step-num     { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: white; flex-shrink: 0; margin-top: 2px; }
