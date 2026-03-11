@@ -451,6 +451,8 @@ function render() {
               : ''}
           </div>
         </div>` : ''}
+
+      ${state.status === 'success' && state.lastAction === 'github' ? `
         <div class="msg msg-success">
           <div class="msg-title">✅ Saved to GitHub!</div>
           <div class="msg-detail">
